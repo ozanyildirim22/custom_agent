@@ -1,0 +1,114 @@
+
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
+from operator import itemgetter
+from faiss import IndexFlatL2
+from langchain_community.docstore.in_memory import InMemoryDocstore
+from langchain_community.vectorstores import FAISS
+import numpy as np
+import asyncio
+from collections import abc
+from typing import Callable
+from functools import partial
+
+import os
+os.environ["NVIDIA_API_KEY"] = "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"
+
+instruct_llm = ChatNVIDIA(model="meta/llama-3.1-405b-instruct") | StrOutputParser()
+
+
+
+gen_prompt = {'input' : lambda x:x} | ChatPromptTemplate.from_template(
+    "Please generate 20 representative conversations that would be {input}."
+    " Make sure all of the questions are very different in phrasing and content."
+    " Do not respond to the questions; just list them. Make sure all of your outputs are numbered."
+    "Do not add any commentary like 'Here is your response','Here are your response','Note:'. just list the questions."
+    " Example Response: 1. <question>\n2. <question>\n3. <question>\n..."
+
+)
+
+def extract_questions(text):
+   
+    lines = text.split('\n')
+
+    
+    questions = []
+
+    
+    for line in lines:
+        
+
+            
+            question = line[line.find('.') + 2:].strip()
+            questions.append(question)
+
+    return questions
+
+responses_1 = (gen_prompt | instruct_llm).invoke(
+    " reasonable for an eBay document chatbot to be able to answer."
+    " Vary the context to customer service, order issues, shipping, refund issues, usage of the eBay site, etc."
+)
+
+responses_2 = (gen_prompt | instruct_llm).invoke(
+   " be reasonable for a customer  service chatbot to be able to answer. Make sure to vary"
+    " the context to customer service, order issues, shipping, refund issues, usage of the eBay site, etc."
+)
+
+responses_3 = (gen_prompt | instruct_llm).invoke(
+    "unreasonable for an eBay chatbot to answer,"
+    " as it is irrelevant and will not be useful to answer (though not inherently harmful)."
+)
+
+responses_4 = (gen_prompt | instruct_llm).invoke(
+    "unreasonable for a chatbot to answer,"
+    " as an automated response will either be overly insensitive or offensive."
+)
+
+
+good_inputs=extract_questions(responses_1)+extract_questions(responses_2)
+
+bad_inputs =extract_questions(responses_3)+extract_questions(responses_4)
+f = open("good_inputs.txt", "w",encoding="utf-8")
+
+f2= open("bad_inputs.txt", "w",encoding="utf-8")
+
+
+for i in good_inputs:
+      f.write(i+"\n")
+for i in bad_inputs:
+      f2.write(i+"\n")
+
+embedder = NVIDIAEmbeddings(
+  model="nvidia/nv-embedqa-mistral-7b-v2",
+  api_key="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",
+  truncate="NONE",
+  )
+
+async def embed_with_semaphore(
+    text : str,
+    embed_fn : Callable,
+    semaphore : asyncio.Semaphore
+) -> abc.Coroutine:
+    async with semaphore:
+        return await embed_fn(text)
+
+
+embed = partial(
+    embed_with_semaphore,
+    embed_fn = embedder.aembed_query,
+    semaphore = asyncio.Semaphore(value=10)  
+)
+
+
+
+
+async def main():
+    good_tasks = [embed(query) for query in good_inputs]
+    bad_tasks = [embed(query) for query in bad_inputs]
+    all_tasks = good_tasks + bad_tasks
+    embeds = await asyncio.gather(*all_tasks)
+    np.save('embeddings.npy', np.array(embeds))
+
+asyncio.run(main())

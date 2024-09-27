@@ -14,7 +14,7 @@ from typing import Callable
 from functools import partial
 
 import os
-os.environ["NVIDIA_API_KEY"] = "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"
+os.environ["NVIDIA_API_KEY"] = "your-nvidia-api-key"
 
 instruct_llm = ChatNVIDIA(model="meta/llama-3.1-405b-instruct") | StrOutputParser()
 

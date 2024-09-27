@@ -20,7 +20,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 docs_chunks = [text_splitter.split_documents(doc) for doc in docs]
 embedder = NVIDIAEmbeddings(
   model="nvidia/nv-embedqa-mistral-7b-v2",
-  api_key="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",
+  api_key="your-nvidia-api-key",
   truncate="NONE",
   )
 
